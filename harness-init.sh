@@ -882,12 +882,14 @@ if [ "$CREATE_REPO" = 1 ]; then
   gh repo create "$REPO_NAME" "--$VISIBILITY" --source=. --push
   git tag "$TAG" && git push -f origin "$TAG"
   echo "pushed and tagged $TAG"
-  [ "$VISIBILITY" = "private" ] && cat <<'NOTE'
+  if [ "$VISIBILITY" = "private" ]; then
+    cat <<'NOTE'
 
 ! private harness: Settings -> Actions -> General -> Access must allow this
   repo's workflows to be used by other repositories, and the App must be
   installed here too so the run can clone it.
 NOTE
+  fi
 else
   echo "next: git init && gh repo create $REPO_NAME --$VISIBILITY --source=. --push && git tag $TAG && git push origin $TAG"
 fi
