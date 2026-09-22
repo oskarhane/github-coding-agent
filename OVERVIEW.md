@@ -87,10 +87,13 @@ agent-harness (public, tagged v1)          target repo
   opencode/opencode.jsonc                  label: agent
   opencode/agents/gbuild-reviewer.md       secrets x3, variables x2
   prompts/01-plan.md … 05-pr.md            environment: agent
+  agent-onboard.sh                         (run it from a target repo clone)
 ```
 
-Onboarding a repo is one script run. Changing the prompt, a model, or the
-opencode version for *every* repo is one commit plus `git tag -f v1`.
+Onboarding a repo is one script run — `agent-onboard.sh` ships in the harness
+itself, so the harness clone is the only repo you need to fetch. Changing the
+prompt, a model, or the opencode version for *every* repo is one commit plus
+`git tag -f v1`.
 
 **GitHub is the control plane; Linear is the spec.** The GitHub issue holds
 only an identifier, so nothing about the card is duplicated. The agent reads

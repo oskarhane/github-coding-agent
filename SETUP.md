@@ -15,6 +15,7 @@ target repo                     harness repo @v1
   (6 lines + `secrets: inherit`)      opencode/opencode.jsonc   policy
                                       opencode/agents/          reviewer
                                       prompts/issue-task.md     the prompt
+                                      agent-onboard.sh          per-repo onboarding
        |
        v
 runner: App token -> everything-cli reads ENG-123 -> opencode 2.x + gbuild
@@ -89,14 +90,21 @@ $EDITOR prompts/issue-task.md          # the part you will actually iterate on
 git commit -am "..." && git tag -f v1 && git push -f origin v1
 ```
 
+Note: `harness-init.sh` does not emit `agent-onboard.sh` — that script lives
+in the harness repo directly (see Phase 3). If you ever re-scaffold into a
+fresh directory, copy it back in before tagging.
+
 ## Phase 3 — per target repo, ~30 seconds each
+
+The onboarding script ships in the harness repo, so the harness clone is the
+only repo you need:
 
 ```sh
 export FIREWORKS_API_KEY=... LINEAR_API_KEY=...
 cd ~/src/some-repo
-./agent-onboard.sh --harness <you>/agent-harness --owner <you> \
-                   --app-id 123456 --app-key-file ~/keys/agent.pem \
-                   --ci-workflow "CI" --dry-run    # inspect, then rerun for real
+~/src/agent-harness/agent-onboard.sh --harness <you>/agent-harness --owner <you> \
+  --app-id 123456 --app-key-file ~/keys/agent.pem \
+  --ci-workflow "CI" --dry-run    # inspect, then rerun for real
 ```
 
 Creates the `agent` label, three secrets, two variables, an `agent`
