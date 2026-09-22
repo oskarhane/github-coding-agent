@@ -194,19 +194,26 @@ MD
 # The prompt is the product here — it changes far more often than the wiring,
 # which is the whole reason it lives in one repo behind a moving tag.
 cat >prompts/01-plan.md <<'MD'
-Task: Linear issue __LINEAR_ID__.
+Task: the spec in .agent/task.md — a frozen snapshot of GitHub issue
+#__ISSUE_NUMBER__ taken when this run was triggered. Do NOT re-fetch the issue
+via gh or any API: later edits by the issue author are deliberately excluded;
+the snapshot is the approved spec.
 
-Read it before anything else:
-  everything-cli linear issue get __LINEAR_ID__ --format toon
-  everything-cli linear issue comments __LINEAR_ID__ --format toon
+If the snapshot references a Linear identifier (e.g. ENG-123), read that card
+as supplementary context:
+  everything-cli linear issue get <ID> --format toon
+  everything-cli linear issue comments <ID> --format toon
+The frozen snapshot remains the spec of record.
 
 This is a non-interactive session. Nobody will answer questions, and you will
 be handed off to a different model for implementation — so the plan has to
 stand on its own.
 
-If the issue is too underspecified for sound assumptions, do NOT plan. Post
-your open questions instead:
-  everything-cli linear issue comment create __LINEAR_ID__ --body "..."
+If the spec is too underspecified for sound assumptions, do NOT plan. Post
+your open questions — on the Linear card if one is linked, otherwise on the
+GitHub issue:
+  everything-cli linear issue comment create <ID> --body "..."
+  gh issue comment __ISSUE_NUMBER__ --body "..."
 then write the single line NEEDS-CLARIFICATION to .agent/plan.md and stop.
 
 Otherwise use the gbuild-plan skill and write .agent/plan.md containing:
@@ -256,7 +263,8 @@ cat >prompts/05-pr.md <<'MD'
 Open the pull request for this branch using the gbuild-pr skill.
 
 The description must contain:
-- the line "Fixes __LINEAR_ID__" (this is what drives the Linear status change)
+- the line "__FIXES_LINE__" (drives the Linear status change, or closes the
+  GitHub issue on merge)
 - the assumptions section from .agent/plan.md
 - any finding still unresolved in the .agent/review-*.json files
 
@@ -278,16 +286,22 @@ MD
 
 # ====================================================== reusable: issue run ===
 cat >.github/workflows/agent.yml <<YAML
-# Reusable. Callers trigger on \`issues: labeled\` and pass owner + app-id.
+# Reusable. Callers trigger on \`issues: labeled\` and \`issue_comment: created\`,
+# and pass owner + allowed-actors + app-id.
 name: agent (reusable)
 
 on:
   workflow_call:
     inputs:
       owner:
-        description: GitHub login permitted to trigger runs
+        description: GitHub login permitted to trigger runs (fallback allowlist)
         required: true
         type: string
+      allowed-actors:
+        description: JSON array of logins permitted to trigger via the agent label
+        required: false
+        type: string
+        default: ""
       app-id:
         description: GitHub App id used to author the PR
         required: true
@@ -348,13 +362,38 @@ jobs:
       HARNESS_DIR: \${{ runner.temp }}/harness
       RUN_URL: \${{ github.server_url }}/\${{ github.repository }}/actions/runs/\${{ github.run_id }}
     steps:
-      # Fail closed even if a caller forgets its own \`if:\` gate.
-      - name: Gate on actor
+      # Fail closed even if a caller forgets its own \`if:\` gate. Two trigger
+      # paths: the agent label (allowlisted logins) and an \`@bot\` comment from
+      # a MEMBER/OWNER/COLLABORATOR on an issue (PR comments never trigger).
+      # All event data arrives via env — never inline \${{ }} into run blocks.
+      - name: Gate on trigger
+        env:
+          EVENT: \${{ github.event_name }}
+          ACTOR: \${{ github.actor }}
+          LABEL: \${{ github.event.label.name }}
+          PR_NUM: \${{ github.event.issue.pull_request.number }}
+          COMMENT_BODY: \${{ github.event.comment.body }}
+          COMMENT_ASSOC: \${{ github.event.comment.author_association }}
+          ALLOWED: \${{ inputs.allowed-actors }}
+          OWNER: \${{ inputs.owner }}
         run: |
-          if [ "\${{ github.actor }}" != "\${{ inputs.owner }}" ]; then
-            echo "::error::\${{ github.actor }} is not permitted to trigger the agent"
+          set -euo pipefail
+          ok=""
+          if [ "\$EVENT" = "issues" ] && [ "\$LABEL" = "agent" ]; then
+            allowed="\$ALLOWED"
+            [ -n "\$allowed" ] || allowed=\$(jq -nc --arg o "\$OWNER" '[\$o]')
+            printf '%s' "\$allowed" | jq -e --arg a "\$ACTOR" 'index(\$a) != null' >/dev/null && ok=1
+          elif [ "\$EVENT" = "issue_comment" ] && [ -z "\$PR_NUM" ]; then
+            case "\$COMMENT_ASSOC" in
+              MEMBER|OWNER|COLLABORATOR)
+                case "\$COMMENT_BODY" in *@bot*) ok=1 ;; esac ;;
+            esac
+          fi
+          if [ -z "\$ok" ]; then
+            echo "::error::\$EVENT by \$ACTOR is not a permitted agent trigger"
             exit 1
           fi
+          echo "trigger: \$EVENT by \$ACTOR — permitted"
 
       # App installation token: makes the App the PR author AND lets the
       # resulting PR trigger pull_request workflows, which GITHUB_TOKEN-
@@ -383,10 +422,12 @@ jobs:
           git clone --depth 1 --branch "\${ref##*/}" \\
             "\${{ github.server_url }}/\$repo" "\$HARNESS_DIR"
 
-      - name: Resolve Linear id
+      # TITLE/BODY come from the trigger event payload — a frozen snapshot.
+      # The issue is never re-fetched: post-trigger edits must not reach the
+      # agent. No Linear identifier means GitHub-issue-only mode, not failure.
+      - name: Resolve task source
         id: linear
         env:
-          GH_TOKEN: \${{ steps.app.outputs.token }}
           ISSUE: \${{ github.event.issue.number }}
           TITLE: \${{ github.event.issue.title }}
           BODY: \${{ github.event.issue.body }}
@@ -394,19 +435,50 @@ jobs:
           set -euo pipefail
           id=\$(printf '%s\\n%s\\n' "\$TITLE" "\$BODY" \\
                | grep -oE '\\b[A-Z][A-Z0-9]{1,9}-[0-9]+\\b' | head -n1 || true)
-          if [ -z "\$id" ]; then
-            gh issue comment "\$ISSUE" --body \\
-              "No Linear identifier (e.g. ENG-123) in the title or body — nothing to work on."
-            exit 1
+          if [ -n "\$id" ]; then
+            echo "Linear card: \$id"
+            echo "id=\$id" >>"\$GITHUB_OUTPUT"
+            echo "branch=agent/\$(printf '%s' "\$id" | tr '[:upper:]' '[:lower:]')" >>"\$GITHUB_OUTPUT"
+          else
+            echo "::notice::no Linear identifier in the issue — running in GitHub-issue-only mode"
+            echo "id=" >>"\$GITHUB_OUTPUT"
+            echo "branch=agent/issue-\$ISSUE" >>"\$GITHUB_OUTPUT"
           fi
-          echo "id=\$id" >>"\$GITHUB_OUTPUT"
-          echo "branch=agent/\$(printf '%s' "\$id" | tr '[:upper:]' '[:lower:]')" >>"\$GITHUB_OUTPUT"
+
+      # The frozen spec: written once from the event payload, then quoted back
+      # to the issue so the executed spec is visible in the timeline.
+      - name: Snapshot the spec and acknowledge
+        env:
+          GH_TOKEN: \${{ steps.app.outputs.token }}
+          ISSUE: \${{ github.event.issue.number }}
+          TITLE: \${{ github.event.issue.title }}
+          BODY: \${{ github.event.issue.body }}
+          EVENT: \${{ github.event_name }}
+          ACTOR: \${{ github.actor }}
+          BRANCH: \${{ steps.linear.outputs.branch }}
+        run: |
+          set -euo pipefail
+          mkdir -p .agent
+          {
+            printf '# %s\\n\\n' "\$TITLE"
+            printf 'GitHub issue #%s, frozen at trigger time (%s by @%s). Later edits to the issue do not affect this run.\\n\\n---\\n\\n' "\$ISSUE" "\$EVENT" "\$ACTOR"
+            printf '%s\\n' "\$BODY"
+          } > .agent/task.md
+          wc -l .agent/task.md
+          {
+            printf '🤖 Picking this up on branch \`%s\`. Run: %s\\n\\n' "\$BRANCH" "\$RUN_URL"
+            printf 'Working from the issue as it was when triggered — edits after this comment do not change what I work on.\\n\\n'
+            printf '<details><summary>Frozen spec</summary>\\n\\n%s\\n\\n</details>' "\$BODY"
+          } > .agent/ack.md
+          gh issue comment "\$ISSUE" --body-file .agent/ack.md
 
       - uses: actions/setup-go@v6
+        if: steps.linear.outputs.id != ''
         with:
           go-version: stable
 
       - name: Restore everything-cli
+        if: steps.linear.outputs.id != ''
         id: ecli-cache
         uses: actions/cache@v4
         with:
@@ -414,7 +486,7 @@ jobs:
           key: ecli-\${{ runner.os }}-\${{ inputs.ecli-ref }}
 
       - name: Build everything-cli
-        if: steps.ecli-cache.outputs.cache-hit != 'true'
+        if: steps.linear.outputs.id != '' && steps.ecli-cache.outputs.cache-hit != 'true'
         run: |
           set -euo pipefail
           # The published installer still ships the old google-cli-named
@@ -426,6 +498,7 @@ jobs:
           cp "\$RUNNER_TEMP/ecli-src/bin/everything-cli" "\$HOME/.local/bin/"
 
       - name: Configure Linear account
+        if: steps.linear.outputs.id != ''
         env:
           LINEAR_API_KEY: \${{ secrets.LINEAR_API_KEY }}
         run: |
@@ -462,6 +535,7 @@ jobs:
           key: opencode-plugins-\${{ inputs.gbuild-version }}
 
       - name: Install everything-cli skill for opencode
+        if: steps.linear.outputs.id != ''
         run: |
           set -euo pipefail
           # Skill install detects agents by their config dir existing, which a
@@ -473,9 +547,16 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p .agent "\$RUNNER_TEMP/prompts"
+          if [ -n "\${{ steps.linear.outputs.id }}" ]; then
+            FIXES_LINE="Fixes \${{ steps.linear.outputs.id }}"
+          else
+            FIXES_LINE="Closes #\${{ github.event.issue.number }}"
+          fi
           for f in "\$HARNESS_DIR"/prompts/0*.md; do
             sed -e "s|__LINEAR_ID__|\${{ steps.linear.outputs.id }}|g" \\
                 -e "s|__BRANCH__|\${{ steps.linear.outputs.branch }}|g" \\
+                -e "s|__ISSUE_NUMBER__|\${{ github.event.issue.number }}|g" \\
+                -e "s|__FIXES_LINE__|\$FIXES_LINE|g" \\
                 "\$f" >"\$RUNNER_TEMP/prompts/\$(basename "\$f")"
           done
           ls -1 "\$RUNNER_TEMP/prompts"
@@ -520,7 +601,7 @@ jobs:
           # explicitly. --continue means "the last session", which is ambiguous
           # the moment anything else runs in this workspace.
           sid=\$(opencode api v2.session.create \\
-                  --data "{\"title\":\"agent \${{ steps.linear.outputs.id }}\"}" 2>/dev/null \\
+                  --data "{\"title\":\"agent \${{ steps.linear.outputs.branch }}\"}" 2>/dev/null \\
                 | jq -r '.id // .sessionID // empty' || true)
           if [ -n "\$sid" ]; then
             echo "SID=\$sid" >>"\$GITHUB_ENV"
@@ -538,7 +619,7 @@ jobs:
           set -euo pipefail
           test -f .agent/plan.md || { echo "::error::no .agent/plan.md — the plan phase produced nothing"; exit 1; }
           if grep -q '^NEEDS-CLARIFICATION' .agent/plan.md; then
-            echo "::notice::issue was underspecified; questions posted to Linear, stopping before implementation"
+            echo "::notice::spec was underspecified; questions posted, stopping before implementation"
             echo "STOP=1" >>"\$GITHUB_ENV"
           fi
           wc -l .agent/plan.md
@@ -666,21 +747,25 @@ jobs:
           path: .agent/
           if-no-files-found: warn
 
-      - name: Report back to Linear
+      - name: Report back
         if: always()
         env:
           GH_TOKEN: \${{ steps.app.outputs.token }}
           ID: \${{ steps.linear.outputs.id }}
+          ISSUE: \${{ github.event.issue.number }}
+          BRANCH: \${{ steps.linear.outputs.branch }}
         run: |
           set -uo pipefail
-          [ -n "\${ID:-}" ] || exit 0
-          pr=\$(gh pr list --head "\${{ steps.linear.outputs.branch }}" --json url -q '.[0].url' 2>/dev/null || true)
+          pr=\$(gh pr list --head "\$BRANCH" --json url -q '.[0].url' 2>/dev/null || true)
           body="Agent run **\${{ job.status }}** — \$RUN_URL"
-          if [ -n "\$pr" ]; then
-            body="\$body"\$'\\n'"PR: \$pr"
-            everything-cli linear issue attachment create "\$ID" --url "\$pr" --title "PR" || true
+          [ -n "\$pr" ] && body="\$body"\$'\\n'"PR: \$pr"
+          gh issue comment "\$ISSUE" --body "\$body" || true
+          if [ -n "\${ID:-}" ]; then
+            if [ -n "\$pr" ]; then
+              everything-cli linear issue attachment create "\$ID" --url "\$pr" --title "PR" || true
+            fi
+            everything-cli linear issue comment create "\$ID" --body "\$body" || true
           fi
-          everything-cli linear issue comment create "\$ID" --body "\$body" || true
 
       - name: Release the label
         if: always()
@@ -809,8 +894,8 @@ YAML
 cat >README.md <<MD
 # agent-harness
 
-Central definition of the Linear -> opencode -> PR agent. Target repos hold a
-caller workflow and nothing else.
+Central definition of the issue -> opencode -> PR agent (Linear optional).
+Target repos hold a caller workflow and nothing else.
 
 | Path | What it is |
 |---|---|
@@ -821,6 +906,46 @@ caller workflow and nothing else.
 | \`opencode/commands/agent-task.md\` | the flow as an opencode command |
 | \`prompts/01-plan.md\` … \`05-pr.md\` | one prompt per phase |
 | \`prompts/ci-fix.md\` | the deliberately narrow CI-fix prompt |
+| \`agent-onboard.sh\` | run from a target repo clone to wire that repo up to this harness |
+
+## Onboarding a target repo
+
+The onboarding script ships here, so this repo is all you need to enable a new
+target:
+
+    gh repo clone <you>/agent-harness    # or curl the raw script at tag v1
+    cd /path/to/target-repo
+    /path/to/agent-harness/agent-onboard.sh --harness <you>/agent-harness --owner <you> \\
+      --app-id <app-id> --app-key-file ~/keys/agent.pem --ci-workflow "CI" --dry-run
+
+Inspect the dry run, then re-run without \`--dry-run\`. It creates the \`agent\`
+label, three secrets, two variables, the gated \`agent\` environment, and commits
+the two caller workflows on a branch with a PR. The script operates on whatever
+repo you run it from — nothing of it stays behind beyond the two callers.
+
+## Triggering a run
+
+Two ways, both wired in the target repo's caller workflow:
+
+- **Apply the \`agent\` label** to an issue. Only logins in the repo's
+  \`AGENT_ALLOWED_ACTORS\` variable (JSON array, set by \`agent-onboard.sh\` from
+  \`--owner\` + \`--actors\`) may trigger this way.
+- **Comment \`@bot …\` on an issue.** The commenter's \`author_association\` must
+  be MEMBER, OWNER or COLLABORATOR — expression-checked, no API call needed.
+  PR comments never trigger (\`issue.pull_request\` is set on those events).
+
+The spec is the issue itself, **frozen at trigger time**: the workflow writes
+\`github.event.issue.title\`/\`body\` from the event payload to \`.agent/task.md\`
+and the phase prompts read only that file — an author editing the issue after
+the trigger cannot change what the agent works on. The run also quotes the
+frozen spec back in its acknowledgement comment, so the executed text is
+visible in the issue timeline. If the issue names a Linear card (\`ENG-123\`),
+the card is read as supplementary context and gets status comments; without
+one the run is GitHub-only and the PR body uses \`Closes #N\` instead of
+\`Fixes ENG-123\`.
+
+The \`agent\` environment's required reviewer (set by \`agent-onboard.sh\` from
+\`--owner\`) is the human-approval layer on top of both triggers.
 
 ## Phases and models
 

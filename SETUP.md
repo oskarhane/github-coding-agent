@@ -5,24 +5,24 @@ thin caller and nothing else. Prompt, policy and versions change in one place
 and roll out by moving a tag.
 
 ```
-Linear card (the spec)
-  ENG-123 ............................ full description, comments
+GitHub issue (the spec, frozen at trigger time)
+  title + body ..................... full description; may name a Linear card
        |
-       |  you open a GitHub issue titled "ENG-123" and apply the `agent` label
+       |  you apply the `agent` label, or a member comments "@bot pick this up"
        v
 target repo                     harness repo @v1
   .github/workflows/agent.yml ---> .github/workflows/agent.yml (workflow_call)
-  (6 lines + `secrets: inherit`)      opencode/opencode.jsonc   policy
+  (two triggers + `secrets: inherit`) opencode/opencode.jsonc   policy
                                       opencode/agents/          reviewer
-                                      prompts/issue-task.md     the prompt
+                                      prompts/01..05 + ci-fix   the prompts
                                       agent-onboard.sh          per-repo onboarding
        |
        v
-runner: App token -> everything-cli reads ENG-123 -> opencode 2.x + gbuild
-        -> branch agent/eng-123 -> PR "Fixes ENG-123"
+runner: App token -> .agent/task.md (frozen issue snapshot) -> opencode 2.x + gbuild
+        -> branch agent/eng-123 (or agent/issue-42) -> PR "Fixes ENG-123" / "Closes #42"
        |
        v
-Linear PR automation moves the card to In Progress, then Done on merge
+Linear PR automation moves the card (if linked); the issue gets status comments
 ```
 
 ## Phase 1 — one-time, manual (~20 min)
@@ -109,6 +109,9 @@ cd ~/src/some-repo
 
 Creates the `agent` label, three secrets, two variables, an `agent`
 environment gated on your review, and commits two caller workflows. Re-runnable.
+Add `--actors "alice,bob"` to let more logins trigger via the label; any
+MEMBER/OWNER/COLLABORATOR can always trigger by commenting `@bot …` on an
+issue, and PR comments never trigger.
 
 | Lives in the target repo | Lives in the harness |
 |---|---|
