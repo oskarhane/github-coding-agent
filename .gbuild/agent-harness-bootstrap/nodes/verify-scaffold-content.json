@@ -1,0 +1,42 @@
+{
+  "status": "completed",
+  "output": {
+    "checks": [
+      { "name": "agent.yml model default kimi-latest", "passed": true },
+      { "name": "agent.yml implement-model default deepseek-flash-latest", "passed": true },
+      { "name": "opencode.jsonc small_model deepseek-flash-latest", "passed": true },
+      { "name": "opencode.jsonc subagent_depth 2", "passed": true },
+      { "name": "opencode.jsonc plugin opencode-gbuild@0.4.0", "passed": true },
+      { "name": "opencode.jsonc gbuild-reviewer agent", "passed": true },
+      { "name": "opencode.jsonc write false", "passed": true },
+      { "name": "opencode.jsonc edit false", "passed": true },
+      { "name": "01-plan.md __LINEAR_ID__", "passed": true },
+      { "name": "01-plan.md NEEDS-CLARIFICATION", "passed": true },
+      { "name": "05-pr.md Fixes __LINEAR_ID__", "passed": true },
+      { "name": "ci-fix.md [agent-ci-fix]", "passed": true },
+      { "name": "agent.yml workflow_call:", "passed": true },
+      { "name": "agent.yml environment: agent", "passed": true },
+      { "name": "agent.yml AGENT_APP_PRIVATE_KEY required true", "passed": true },
+      { "name": "agent.yml FIREWORKS_API_KEY required true", "passed": true },
+      { "name": "agent.yml LINEAR_API_KEY required true", "passed": true },
+      { "name": "agent-ci-fix.yml workflow_call:", "passed": true },
+      { "name": "agent-ci-fix.yml default: 3", "passed": true },
+      { "name": "README.md current defaults on two consecutive lines", "passed": true },
+      { "name": "output shape: one entry per check, each with passed flag", "passed": true }
+    ],
+    "all_passed": true
+  },
+  "review": {
+    "verdict": "pass",
+    "acceptance_results": [
+      { "criterion": "agent.yml contains both model-default literals (kimi-latest as model, deepseek-flash-latest as implement-model)", "passed": true },
+      { "criterion": "opencode.jsonc matches all six fixed strings (small_model, subagent_depth, plugin pin, gbuild-reviewer agent, write:false, edit:false)", "passed": true },
+      { "criterion": "prompt markers present (__LINEAR_ID__, NEEDS-CLARIFICATION, Fixes __LINEAR_ID__, [agent-ci-fix])", "passed": true },
+      { "criterion": "agent.yml workflow_call + environment: agent + three secrets required; agent-ci-fix.yml workflow_call + default: 3", "passed": true },
+      { "criterion": "README.md names the current defaults — charted literal present verbatim across two consecutive lines (39-40), the generator's heredoc wrap", "passed": true },
+      { "criterion": "output.all_passed true and output.checks has one entry per check run, each with a passed flag", "passed": true }
+    ]
+  },
+  "started_at": "2026-09-22T14:28:48Z",
+  "completed_at": "2026-09-22T14:28:48Z"
+}

@@ -23,7 +23,7 @@
     {
       "id": 3,
       "labels": ["Acceptance"],
-      "properties": { "id": "a-2", "text": "gh workflow list on the repo shows both reusable workflows, 'agent (reusable)' and 'agent-ci-fix (reusable)' — i.e. GitHub accepted the workflow YAML" }
+      "properties": { "id": "a-2", "text": "gh workflow list on the repo shows both reusable workflows registered and active (by path or by name — GitHub reports never-run reusable workflows by path), and the workflow YAML at tag v1 declares 'name: agent (reusable)' and 'name: agent-ci-fix (reusable)' — i.e. GitHub accepted the workflow YAML" }
     },
     {
       "id": 4,
@@ -119,7 +119,7 @@
         },
         "acceptance": [
           "gh api repos/oskarhane/agent-harness/git/refs/tags/v1 --jq .object.sha prints exactly the scaffold node's output.commit_sha",
-          "gh workflow list --repo oskarhane/agent-harness --all output contains both 'agent (reusable)' and 'agent-ci-fix (reusable)'",
+          "gh workflow list --repo oskarhane/agent-harness --all shows both workflows registered and active (identified by path or by name), and the workflow YAML at tag v1 declares 'name: agent (reusable)' and 'name: agent-ci-fix (reusable)'",
           "gh api 'repos/oskarhane/agent-harness/contents/prompts/01-plan.md?ref=v1' --jq .name prints 01-plan.md (file content exists at the tag)",
           "gh repo view oskarhane/agent-harness --json isPrivate -q .isPrivate prints false",
           "output.all_passed is true and output.workflow_names lists the workflows gh discovered"

@@ -1,0 +1,35 @@
+{
+  "status": "completed",
+  "output": {
+    "dir": "/Users/oskarhane/src/agent-harness",
+    "repo": "oskarhane/agent-harness",
+    "repo_url": "https://github.com/oskarhane/agent-harness",
+    "tag": "v1",
+    "commit_sha": "088738967cd6d3898662e66e5db1c99dbfd28e9b",
+    "files": [
+      ".github/workflows/agent-ci-fix.yml",
+      ".github/workflows/agent.yml",
+      "README.md",
+      "opencode/agents/gbuild-reviewer.md",
+      "opencode/commands/agent-task.md",
+      "opencode/opencode.jsonc",
+      "prompts/01-plan.md",
+      "prompts/02-implement.md",
+      "prompts/03-review.md",
+      "prompts/04-fix.md",
+      "prompts/05-pr.md",
+      "prompts/ci-fix.md"
+    ]
+  },
+  "review": {
+    "verdict": "pass",
+    "acceptance_results": [
+      { "criterion": "the harness-init.sh invocation exits 0", "passed": true },
+      { "criterion": "git -C ~/src/agent-harness rev-list --count HEAD prints 1, and git -C ~/src/agent-harness rev-parse v1 prints the same 40-char sha recorded in output.commit_sha", "passed": true },
+      { "criterion": "gh repo view oskarhane/agent-harness --json visibility -q .visibility prints PUBLIC", "passed": true },
+      { "criterion": "the scaffolded dir contains .github/workflows/agent.yml, .github/workflows/agent-ci-fix.yml, opencode/opencode.jsonc, opencode/agents/gbuild-reviewer.md, opencode/commands/agent-task.md, prompts/01-plan.md, prompts/02-implement.md, prompts/03-review.md, prompts/04-fix.md, prompts/05-pr.md, prompts/ci-fix.md and README.md", "passed": true }
+    ]
+  },
+  "started_at": "2026-09-22T14:20:56Z",
+  "completed_at": "2026-09-22T14:20:56Z"
+}
