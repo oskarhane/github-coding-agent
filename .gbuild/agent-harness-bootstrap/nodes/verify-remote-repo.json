@@ -1,0 +1,31 @@
+{
+  "status": "completed",
+  "output": {
+    "checks": [
+      { "name": "tag v1 sha equals commit_sha", "passed": true },
+      { "name": "both workflows listed by gh (path form)", "passed": true },
+      { "name": "both workflows registered and active (actions/workflows API)", "passed": true },
+      { "name": "agent.yml declares 'name: agent (reusable)' at v1", "passed": true },
+      { "name": "agent-ci-fix.yml declares 'name: agent-ci-fix (reusable)' at v1", "passed": true },
+      { "name": "prompts/01-plan.md exists at v1", "passed": true },
+      { "name": "repo is public (isPrivate false)", "passed": true }
+    ],
+    "all_passed": true,
+    "workflow_names": [
+      ".github/workflows/agent-ci-fix.yml",
+      ".github/workflows/agent.yml"
+    ]
+  },
+  "review": {
+    "verdict": "pass",
+    "acceptance_results": [
+      { "criterion": "tag ref v1 resolves to exactly 088738967cd6d3898662e66e5db1c99dbfd28e9b", "passed": true },
+      { "criterion": "both workflows registered and active in gh workflow list (path or name form), and the workflow YAML at tag v1 declares 'name: agent (reusable)' and 'name: agent-ci-fix (reusable)' [amended criterion — original name-form-only wording was unsatisfiable: GitHub reports never-run reusable workflows by path]", "passed": true },
+      { "criterion": "prompts/01-plan.md exists with content at ref=v1", "passed": true },
+      { "criterion": "repo is public (isPrivate false)", "passed": true },
+      { "criterion": "output.all_passed true and output.workflow_names lists the workflows gh discovered (path form, as gh reports them)", "passed": true }
+    ]
+  },
+  "started_at": "2026-09-22T14:32:17Z",
+  "completed_at": "2026-09-22T14:32:17Z"
+}
