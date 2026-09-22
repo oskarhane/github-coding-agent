@@ -14,37 +14,40 @@ routing, your policy, versioned in one repo and rolled out by moving a tag.
 ## The flow
 
 ```
-Linear card                    the spec lives here, in full
-  ENG-123                      description, comments, attachments
+GitHub issue                   the spec — title + body, frozen at trigger time
+  (optionally names ENG-123 -> the Linear card is read as extra context)
       |
-      |  you open a GitHub issue titled "ENG-123" and apply the `agent` label
-      v
-GitHub issue                   a pointer, not a copy
-      |
+      |  you apply the `agent` label, or a member comments "@bot pick this up"
       v
 Actions runner
       |-- App token            PR author = your bot, and its PRs trigger CI
-      |-- everything-cli       reads ENG-123 from Linear, writes back progress
+      |-- snapshot             .agent/task.md = the issue at trigger time;
+      |                        post-trigger edits never reach the agent
+      |-- everything-cli       if a Linear id is linked: reads the card,
+      |                        writes back progress
       |-- opencode 2.x         + gbuild plugin, policy from the harness
       |
       |   plan -> implement -> review -> fix -> review -> pr
       |   kimi    deepseek      kimi      deepseek  kimi    kimi
       v
-PR "Fixes ENG-123"             on branch agent/eng-123
+PR "Fixes ENG-123"             on branch agent/eng-123 (or "Closes #42" on
+                               agent/issue-42 when no Linear card is linked)
       |
       |-- Linear PR automation moves the card to In Progress, then Done
       |-- CI fails? -> a second workflow fixes it, capped at 3 attempts
       |-- `/oc <instruction>` in a PR comment -> another turn on the same PR
 ```
 
-One card, concretely: you write ENG-123 in Linear with a real description. You
-open a GitHub issue whose title is just `ENG-123` and label it `agent`. The run
-reads the Linear card, writes a plan with its assumptions stated, implements it
-on `agent/eng-123`, hands the diff to a *different model* for review, fixes
-what review found, reviews again, and opens a PR containing the plan's
-assumptions and any unresolved findings. The card moves itself. If CI goes red
-on that branch, a separate narrow workflow reads the failing job log and pushes
-a fix commit — up to three times, then it stops and waits for you.
+One task, concretely: you write the issue — or you write ENG-123 in Linear
+with a real description and open an issue titled just `ENG-123`. You label it
+`agent`, or a repo member comments `@bot pick this up`. The run freezes the
+issue into `.agent/task.md` (later edits by the author are excluded by
+construction), writes a plan with its assumptions stated, implements it on
+`agent/eng-123`, hands the diff to a *different model* for review, fixes what
+review found, reviews again, and opens a PR containing the plan's assumptions
+and any unresolved findings. The card moves itself. If CI goes red on that
+branch, a separate narrow workflow reads the failing job log and pushes a fix
+commit — up to three times, then it stops and waits for you.
 
 ---
 
@@ -87,16 +90,24 @@ agent-harness (public, tagged v1)          target repo
   opencode/opencode.jsonc                  label: agent
   opencode/agents/gbuild-reviewer.md       secrets x3, variables x2
   prompts/01-plan.md … 05-pr.md            environment: agent
+  agent-onboard.sh                         (run it from a target repo clone)
 ```
 
-Onboarding a repo is one script run. Changing the prompt, a model, or the
-opencode version for *every* repo is one commit plus `git tag -f v1`.
+Onboarding a repo is one script run — `agent-onboard.sh` ships in the harness
+itself, so the harness clone is the only repo you need to fetch. Changing the
+prompt, a model, or the opencode version for *every* repo is one commit plus
+`git tag -f v1`.
 
-**GitHub is the control plane; Linear is the spec.** The GitHub issue holds
-only an identifier, so nothing about the card is duplicated. The agent reads
-Linear directly. The reverse direction — status transitions — is free: the PR
-body contains `Fixes ENG-123` and Linear's own PR automation does the rest, so
-the agent never needs to know a workflow-state UUID.
+**GitHub is the control plane; the issue is the spec, frozen at trigger
+time.** The run reads the issue title and body from the trigger event payload
+into `.agent/task.md` and never re-fetches it — the author editing the issue
+after the label or `@bot` comment cannot change what the agent executes, and
+the acknowledgement comment quotes the frozen text so the executed spec is on
+the record. If the issue names a Linear card, the card is read as
+supplementary context and the status transitions stay free: the PR body
+contains `Fixes ENG-123` and Linear's own PR automation does the rest, so the
+agent never needs to know a workflow-state UUID. Without a Linear id the PR
+closes the issue directly (`Closes #N`).
 
 **Credentials.** Three secrets per repo: the model provider key, a Linear API
 key, and the GitHub App private key. The App matters for two reasons — the PR
@@ -115,7 +126,8 @@ it, so no target repo can loosen the agent's permissions by committing an
 
 | Decision | Why | What it costs |
 |---|---|---|
-| Trigger from GitHub, not a Linear webhook | Linear's webhook can't attach an auth header, so any Linear-side trigger needs a relay holding a token. GitHub's `issues: labeled` event carries a real human actor for free. | The card starts life in two places (one-way Issues Sync fixes this if you want it). |
+| Trigger from GitHub, not a Linear webhook | Linear's webhook can't attach an auth header, so any Linear-side trigger needs a relay holding a token. GitHub's `issues: labeled` event carries a real human actor for free, and `issue_comment` carries the commenter's `author_association`. | The card starts life in two places (one-way Issues Sync fixes this if you want it). |
+| Spec frozen from the trigger payload, never re-fetched | The issue author can edit their text after a member triggers the run; reading `github.event.issue` from the payload makes the run insensitive to post-trigger edits. | The agent never sees comments or edits posted after the trigger. |
 | Seven `opencode run` phases, one session | Per-phase models, and a gate behind each phase. A failed plan cannot silently proceed to implementation. | Seven context loads; prompt caching is void at each model boundary. One `opencode serve` with `--attach` recovers most of the overhead. |
 | Reviewer defined in config, not by the plugin | opencode plugins can't register agents, so gbuild inlines a brief into a generic subagent. A config-defined agent with `write: false, edit: false` is *structurally* unable to fix what it reviews. | One more thing to keep in sync with gbuild. |
 | Review findings are a JSON file, not a claim | A verdict inside the transcript can't be checked from outside. A missing `review-N.json` proves the reviewer never ran — and an unreviewed PR otherwise looks exactly like a reviewed one. | The prompt has to specify a schema, and the model has to honour it. |
@@ -129,8 +141,8 @@ it, so no target repo can loosen the agent's permissions by committing an
 
 - **Merge.** Branch protection stays on; a bot can't satisfy CODEOWNERS anyway.
 - **Ask questions.** The session is non-interactive. If a card is too vague for
-  sound assumptions, the plan phase posts its questions to Linear and the run
-  stops before touching code.
+  sound assumptions, the plan phase posts its questions (to the Linear card if
+  linked, otherwise to the GitHub issue) and the run stops before touching code.
 - **Edit its own triggers.** The App has no `workflows: write`, and the prompts
   forbid touching `.github/` and `.opencode/`.
 - **Stream progress into Linear.** You get a comment with the run URL, the PR

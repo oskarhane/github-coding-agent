@@ -1,0 +1,150 @@
+{
+  "nodes": [
+    {
+      "id": 1,
+      "labels": ["Feature"],
+      "properties": {
+        "feature": "agent-harness-bootstrap",
+        "destination": "Public repo oskarhane/agent-harness tagged v1 holds the complete harness-init.sh scaffold (both reusable workflows, opencode policy, reviewer agent, command, 6 prompts, README) with fireworks-ai/kimi-latest as default model and fireworks-ai/deepseek-flash-latest for implement + small roles.",
+        "context": "OVERVIEW.md + SETUP.md in this directory specify a Linear-triggered coding agent; this graph executes the scriptable part of SETUP.md (Phase 2). Phase 1 prerequisites are manual and not yet done, so onboarding (Phase 3) and the smoke test (Phase 4) are deferred.",
+        "out_of_scope": [
+          "Phase 1 manual prerequisites: GitHub App creation + .pem key + installation on repos, Linear API key, Linear PR automations, Fireworks API key",
+          "Phase 3: onboarding any target repo with agent-onboard.sh",
+          "Phase 4: smoke test with a throwaway Linear card",
+          "Editing harness content beyond what harness-init.sh generates"
+        ]
+      }
+    },
+    {
+      "id": 2,
+      "labels": ["Acceptance"],
+      "properties": { "id": "a-1", "text": "oskarhane/agent-harness is a public GitHub repo and tag v1 points at the harness-init scaffold commit" }
+    },
+    {
+      "id": 3,
+      "labels": ["Acceptance"],
+      "properties": { "id": "a-2", "text": "gh workflow list on the repo shows both reusable workflows registered and active (by path or by name — GitHub reports never-run reusable workflows by path), and the workflow YAML at tag v1 declares 'name: agent (reusable)' and 'name: agent-ci-fix (reusable)' — i.e. GitHub accepted the workflow YAML" }
+    },
+    {
+      "id": 4,
+      "labels": ["Acceptance"],
+      "properties": { "id": "a-3", "text": "Model routing is pinned in the generated files: fireworks-ai/kimi-latest as the workflow's model default, fireworks-ai/deepseek-flash-latest as implement-model default and as small_model in opencode.jsonc" }
+    },
+    {
+      "id": 5,
+      "labels": ["Acceptance"],
+      "properties": { "id": "a-4", "text": "All expected harness files exist: 2 reusable workflows, opencode/opencode.jsonc, opencode/agents/gbuild-reviewer.md, opencode/commands/agent-task.md, prompts 01-05 + ci-fix, README.md" }
+    },
+    {
+      "id": 6,
+      "labels": ["GbuildNode", "Chore"],
+      "properties": {
+        "slug": "scaffold-harness-repo",
+        "title": "Run harness-init.sh to scaffold and publish the harness repo",
+        "type": "chore",
+        "contract": {
+          "input": {
+            "script": "/Users/oskarhane/Development/github-coding-agent/harness-init.sh",
+            "argv": "--dir ~/src/agent-harness --create-repo --model fireworks-ai/kimi-latest --implement-model fireworks-ai/deepseek-flash-latest --small-model fireworks-ai/deepseek-flash-latest",
+            "preconditions": "gh authenticated as oskarhane; oskarhane/agent-harness does not exist yet; ~/src/agent-harness absent or empty; git user identity configured"
+          },
+          "output": {
+            "dir": "<absolute path of the scaffolded repo>",
+            "repo": "oskarhane/agent-harness",
+            "repo_url": "<html url of the created repo>",
+            "tag": "v1",
+            "commit_sha": "<40-char sha that tag v1 points at, from git -C <dir> rev-parse v1>",
+            "files": ["<relative path of every file the script wrote>"]
+          }
+        },
+        "acceptance": [
+          "the harness-init.sh invocation exits 0",
+          "git -C ~/src/agent-harness rev-list --count HEAD prints 1, and git -C ~/src/agent-harness rev-parse v1 prints the same 40-char sha recorded in output.commit_sha",
+          "gh repo view oskarhane/agent-harness --json visibility -q .visibility prints PUBLIC",
+          "the scaffolded dir contains .github/workflows/agent.yml, .github/workflows/agent-ci-fix.yml, opencode/opencode.jsonc, opencode/agents/gbuild-reviewer.md, opencode/commands/agent-task.md, prompts/01-plan.md, prompts/02-implement.md, prompts/03-review.md, prompts/04-fix.md, prompts/05-pr.md, prompts/ci-fix.md and README.md"
+        ],
+        "verify": null,
+        "failure_policy": "retry",
+        "model_tier": "cheap"
+      }
+    },
+    {
+      "id": 7,
+      "labels": ["GbuildNode", "Verify"],
+      "properties": {
+        "slug": "verify-scaffold-content",
+        "title": "Verify scaffolded files and model routing on disk",
+        "type": "verify",
+        "contract": {
+          "input": {
+            "dir": "<absolute path, from scaffold-harness-repo.output.dir>",
+            "repo": "oskarhane/agent-harness"
+          },
+          "output": {
+            "checks": [{ "name": "<string>", "passed": "<boolean>" }],
+            "all_passed": "<boolean>"
+          }
+        },
+        "acceptance": [
+          ".github/workflows/agent.yml contains the literal strings 'default: \"fireworks-ai/kimi-latest\"' (the model input) and 'default: \"fireworks-ai/deepseek-flash-latest\"' (the implement-model input)",
+          "opencode/opencode.jsonc matches grep -F for all of: '\"small_model\": \"fireworks-ai/deepseek-flash-latest\"', '\"subagent_depth\": 2', 'opencode-gbuild@0.4.0', '\"gbuild-reviewer\"', '\"write\": false', '\"edit\": false'",
+          "grep -F '__LINEAR_ID__' prompts/01-plan.md and grep -F 'NEEDS-CLARIFICATION' prompts/01-plan.md both match; grep -F 'Fixes __LINEAR_ID__' prompts/05-pr.md matches; grep -F '[agent-ci-fix]' prompts/ci-fix.md matches",
+          ".github/workflows/agent.yml contains 'workflow_call:', 'environment: agent', and 'required: true' for each of AGENT_APP_PRIVATE_KEY, FIREWORKS_API_KEY, LINEAR_API_KEY; .github/workflows/agent-ci-fix.yml contains 'workflow_call:' and 'default: 3'",
+          "README.md contains the literal 'Current defaults: model `fireworks-ai/kimi-latest`, opencode `2.0.1`, opencode-gbuild `0.4.0`'",
+          "output.all_passed is true and output.checks contains one entry per check run, each with a passed flag"
+        ],
+        "verify": null,
+        "failure_policy": "escalate",
+        "model_tier": "cheap"
+      }
+    },
+    {
+      "id": 8,
+      "labels": ["GbuildNode", "Verify"],
+      "properties": {
+        "slug": "verify-remote-repo",
+        "title": "Verify the GitHub repo, tag and workflow discovery",
+        "type": "verify",
+        "contract": {
+          "input": {
+            "repo": "oskarhane/agent-harness",
+            "tag": "v1",
+            "commit_sha": "<from scaffold-harness-repo.output.commit_sha>"
+          },
+          "output": {
+            "checks": [{ "name": "<string>", "passed": "<boolean>" }],
+            "all_passed": "<boolean>",
+            "workflow_names": ["<workflow names as gh reports them>"]
+          }
+        },
+        "acceptance": [
+          "gh api repos/oskarhane/agent-harness/git/refs/tags/v1 --jq .object.sha prints exactly the scaffold node's output.commit_sha",
+          "gh workflow list --repo oskarhane/agent-harness --all shows both workflows registered and active (identified by path or by name), and the workflow YAML at tag v1 declares 'name: agent (reusable)' and 'name: agent-ci-fix (reusable)'",
+          "gh api 'repos/oskarhane/agent-harness/contents/prompts/01-plan.md?ref=v1' --jq .name prints 01-plan.md (file content exists at the tag)",
+          "gh repo view oskarhane/agent-harness --json isPrivate -q .isPrivate prints false",
+          "output.all_passed is true and output.workflow_names lists the workflows gh discovered"
+        ],
+        "verify": null,
+        "failure_policy": "retry",
+        "model_tier": "cheap"
+      }
+    }
+  ],
+  "relationships": [
+    { "id": 1, "type": "HAS_ACCEPTANCE", "start_node": 1, "end_node": 2, "properties": {} },
+    { "id": 2, "type": "HAS_ACCEPTANCE", "start_node": 1, "end_node": 3, "properties": {} },
+    { "id": 3, "type": "HAS_ACCEPTANCE", "start_node": 1, "end_node": 4, "properties": {} },
+    { "id": 4, "type": "HAS_ACCEPTANCE", "start_node": 1, "end_node": 5, "properties": {} },
+    { "id": 5, "type": "SATISFIES", "start_node": 6, "end_node": 2, "properties": {} },
+    { "id": 6, "type": "SATISFIES", "start_node": 8, "end_node": 2, "properties": {} },
+    { "id": 7, "type": "SATISFIES", "start_node": 8, "end_node": 3, "properties": {} },
+    { "id": 8, "type": "SATISFIES", "start_node": 7, "end_node": 4, "properties": {} },
+    { "id": 9, "type": "SATISFIES", "start_node": 7, "end_node": 5, "properties": {} },
+    { "id": 10, "type": "DEPENDS_ON", "start_node": 7, "end_node": 6, "properties": {} },
+    { "id": 11, "type": "DEPENDS_ON", "start_node": 8, "end_node": 6, "properties": {} }
+  ],
+  "indexes": [],
+  "constraints": [],
+  "next_node_id": 9,
+  "next_rel_id": 12
+}
